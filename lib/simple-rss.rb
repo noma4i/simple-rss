@@ -37,6 +37,8 @@ class SimpleRSS
 		:'media:category', :'media:category#scheme'
 	]
 
+
+
 	def initialize(source, options={})
 		@source = source.respond_to?(:read) ? source.read : source.to_s
 		@items = Array.new
@@ -95,10 +97,14 @@ class SimpleRSS
 			end
 		end
 
+    # don't process any ignore_tags passed in through options
+    item_tags = @@item_tags - (@options[:ignore_tags] || [])
+    array_tags = @options[:array_tags] || []
+
 		# RSS items' title, link, and description
 		@source.scan( %r{<(rss:|atom:)?(item|entry)([\s][^>]*)?>(.*?)</(rss:|atom:)?(item|entry)>}mi ) do |match|
 			item = Hash.new
-			@@item_tags.each do |tag|
+			item_tags.each do |tag|
 			  if tag.to_s.include?("+")
 			    tag_data = tag.to_s.split("+")
 			    tag = tag_data[0]
@@ -120,7 +126,14 @@ class SimpleRSS
   				  nil
   				end
   				item[clean_tag("#{tag}_#{attrib}")] = clean_content(tag, attrib, $3) if $3
-		    else
+		    elsif array_tags.index(tag) 
+          # process this tag as an Array (scan!)
+          vals = []
+          match[3].scan( %r{<#{tag}>(.*?)</#{tag}>}mi) do |tag_match|
+            vals << tag_match[0]
+          end
+          item[clean_tag(tag)] = vals
+        else
   				if match[3] =~ %r{<(rss:|atom:)?#{tag}(.*?)>(.*?)</(rss:|atom:)?#{tag}>}mi
   					nil
   				elsif match[3] =~ %r{<(rss:|atom:)?#{tag}(.*?)/\s*>}mi
@@ -151,13 +164,13 @@ class SimpleRSS
 		tag.to_s.gsub(':','_').intern
 	end
 	
-	def unescape(content)
-		if content =~ /([^-_.!~*'()a-zA-Z\d;\/?:@&=+$,\[\]]%)/ then
-			CGI.unescape(content)
-		else
-			content
-		end.gsub(/(<!\[CDATA\[|\]\]>)/,'').strip
-	end
+  def unescape(content)
+  	if content.respond_to?(:force_encoding) && content.force_encoding("binary") =~ /([^-_.!~*'()a-zA-Z\d;\/?:@&=+$,\[\]]%)/n then
+  		CGI.unescape(content).gsub(/(<!\[CDATA\[|\]\]>)/,'').strip
+  	else
+  		content.gsub(/(<!\[CDATA\[|\]\]>)/,'').strip
+  	end
+  end
 end
 
 class SimpleRSSError < StandardError
